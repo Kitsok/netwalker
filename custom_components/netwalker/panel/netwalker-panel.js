@@ -359,7 +359,7 @@ class NetWalkerPanel extends HTMLElement {
         <div class="toolbar">
           <div class="title-block">
             <div class="title">NetWalker</div>
-            <div class="subtitle">${this._escape(this._formatTimestamp(data?.updated_at))}</div>
+            <div class="subtitle">${this._escape(this._formatTimestamp(data))}</div>
           </div>
           <select class="select" id="entry-select">
             ${
@@ -760,9 +760,12 @@ class NetWalkerPanel extends HTMLElement {
     return `${days}d ${hours}h ${minutes}m`;
   }
 
-  _formatTimestamp(value) {
+  _formatTimestamp(data) {
+    const value = data?.updated_at;
     if (!value) {
-      return "Waiting for topology data";
+      return data?.devices?.length
+        ? "Topology loaded"
+        : "Discovery in progress";
     }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {

@@ -565,7 +565,7 @@ class NetWalkerPanel extends HTMLElement {
       ["Reachable", device.reachable ? "Yes" : "No"],
       ["Uptime", this._formatUptimeTicks(device.uptime_ticks)],
       ["Wireless", device.wireless_clients ?? "-"],
-      ["PoE active", device.poe_ports_active ?? "-"],
+      ["PoE active", this._formatPoeSummary(device)],
       ["System", device.sys_descr || "-"],
     ];
 
@@ -594,6 +594,23 @@ class NetWalkerPanel extends HTMLElement {
       { rx: 0, tx: 0 }
     );
     return `RX ${this._formatBits(totals.rx)}  TX ${this._formatBits(totals.tx)}`;
+  }
+
+  _formatPoeSummary(device) {
+    const portsActive = device.poe_ports_active;
+    if (portsActive == null) {
+      return "-";
+    }
+
+    const totalWatts = (device.interfaces || []).reduce((sum, iface) => {
+      return sum + (Number(iface.poe_power_watts) || 0);
+    }, 0);
+
+    if (totalWatts <= 0) {
+      return String(portsActive);
+    }
+
+    return `${portsActive} (${totalWatts.toFixed(1)} W)`;
   }
 
   _formatBits(value) {

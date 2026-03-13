@@ -23,6 +23,7 @@ This repository is intentionally structured as a HACS custom integration, not a 
 - UI-only configuration with Home Assistant config flow and options flow
 - SNMPv2c polling
 - Seed hosts entered in the web UI
+- LLDP management-address expansion from those seed hosts
 - Device discovery using standard SNMP system and interface tables
 - Link inference from LLDP plus optional manual UI overrides
 - Home Assistant entities and devices
@@ -35,6 +36,7 @@ No YAML is required. All configuration is stored in Home Assistant config entrie
 
 - title
 - seed hosts
+- automatic expansion to LLDP neighbors that expose management IPs
 - SNMP community
 - polling interval
 - retries and timeouts
@@ -66,6 +68,9 @@ The first version keeps manual overrides in the web UI as JSON text. That satisf
 11. Submit the form.
 
 After setup, Home Assistant will create discovered devices and entities, and the `NetWalker` sidebar panel will appear automatically.
+Configured seed hosts act as entry points. NetWalker will also try to
+discover additional MikroTik devices by following LLDP management
+addresses learned from those seeds.
 
 ### Option 2: Manual install
 

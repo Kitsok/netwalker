@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass, field, replace
@@ -139,6 +140,7 @@ async def discover_device(
     lldp_loc_task = asyncio.create_task(client.walk(OIDS["lldp_loc_port_id"]))
     lldp_rem_name_task = asyncio.create_task(client.walk(OIDS["lldp_rem_sys_name"]))
     lldp_rem_port_task = asyncio.create_task(client.walk(OIDS["lldp_rem_port_desc"]))
+    lldp_rem_addr_task = asyncio.create_task(client.walk(OIDS["lldp_rem_man_addr"]))
 
     try:
         (
@@ -154,6 +156,7 @@ async def discover_device(
             lldp_local_ports,
             lldp_remote_names,
             lldp_remote_ports,
+            lldp_remote_addrs,
         ) = await asyncio.gather(
             sys_name_task,
             sys_descr_task,
@@ -167,6 +170,7 @@ async def discover_device(
             lldp_loc_task,
             lldp_rem_name_task,
             lldp_rem_port_task,
+            lldp_rem_addr_task,
         )
     except Exception as err:
         _LOGGER.debug("Discovery failed for %s: %s", host, err)
@@ -181,6 +185,7 @@ async def discover_device(
         lldp_local_ports=lldp_local_ports,
         lldp_remote_names=lldp_remote_names,
         lldp_remote_ports=lldp_remote_ports,
+        lldp_remote_addrs=lldp_remote_addrs,
     )
 
     return DeviceSnapshot(
@@ -231,6 +236,7 @@ def _build_neighbors(
     lldp_local_ports: dict[str, str],
     lldp_remote_names: dict[str, str],
     lldp_remote_ports: dict[str, str],
+    lldp_remote_addrs: dict[str, str],
 ) -> list[LldpNeighbor]:
     local_port_names = {
         _oid_suffix(OIDS["lldp_loc_port_id"], oid): value
@@ -238,29 +244,70 @@ def _build_neighbors(
     }
 
     remote_port_descs = {
-        _remote_key_from_oid(oid): value for oid, value in lldp_remote_ports.items()
+        _remote_table_key_from_oid(OIDS["lldp_rem_port_desc"], oid): value
+        for oid, value in lldp_remote_ports.items()
+    }
+    remote_management_addrs = {
+        key: decoded
+        for oid, value in lldp_remote_addrs.items()
+        for key, decoded in [
+            _decode_lldp_management_address(oid, value)
+        ]
+        if decoded is not None
     }
 
     neighbors: list[LldpNeighbor] = []
     for oid, remote_system_name in lldp_remote_names.items():
-        remote_key = _remote_key_from_oid(oid)
-        local_port_num = remote_key[0]
+        remote_key = _remote_table_key_from_oid(OIDS["lldp_rem_sys_name"], oid)
+        local_port_num = remote_key[1]
         neighbors.append(
             LldpNeighbor(
                 local_port_num=local_port_num,
                 local_interface=local_port_names.get(local_port_num, local_port_num),
                 remote_system_name=remote_system_name,
                 remote_interface=remote_port_descs.get(remote_key),
+                remote_management_address=remote_management_addrs.get(remote_key),
             )
         )
     return neighbors
 
 
-def _remote_key_from_oid(oid: str) -> tuple[str, str]:
-    parts = oid.split(".")
-    if len(parts) < 2:
-        return (oid, "0")
-    return (parts[-2], parts[-1])
+def _remote_table_key_from_oid(base_oid: str, oid: str) -> tuple[str, str, str]:
+    suffix = _oid_suffix(base_oid, oid)
+    parts = suffix.split(".")
+    if len(parts) < 3:
+        padded = parts + ["0"] * (3 - len(parts))
+        return (padded[0], padded[1], padded[2])
+    return (parts[0], parts[1], parts[2])
+
+
+def _decode_lldp_management_address(
+    oid: str, raw_value: str
+) -> tuple[tuple[str, str, str], str | None]:
+    parts = _oid_suffix(OIDS["lldp_rem_man_addr"], oid).split(".")
+    if len(parts) < 5:
+        return (_remote_table_key_from_oid(OIDS["lldp_rem_man_addr"], oid), None)
+
+    remote_key = (parts[0], parts[1], parts[2])
+    subtype = _safe_int(parts[3])
+    address_length = _safe_int(parts[4])
+    address_parts = parts[5 : 5 + address_length] if address_length else []
+
+    if subtype == 1 and len(address_parts) == 4:
+        return (remote_key, ".".join(address_parts))
+
+    if subtype == 2 and len(address_parts) == 16:
+        try:
+            ipv6_bytes = bytes(int(part) for part in address_parts)
+            return (remote_key, str(ipaddress.IPv6Address(ipv6_bytes)))
+        except ValueError:
+            return (remote_key, None)
+
+    # Fall back to PySNMP's rendered value for address types we do not decode explicitly.
+    if raw_value and raw_value != "0x":
+        return (remote_key, raw_value)
+
+    return (remote_key, None)
 
 
 def _oid_suffix(base_oid: str, full_oid: str) -> str:

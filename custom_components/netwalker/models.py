@@ -28,6 +28,7 @@ class LldpNeighbor:
     local_interface: str
     remote_system_name: str
     remote_interface: str | None = None
+    remote_management_address: str | None = None
 
 
 @dataclass(slots=True)

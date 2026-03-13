@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
@@ -113,7 +114,7 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
         )
 
     async def _async_update_data(self) -> TopologySnapshot:
-        if not self.scan_targets:
+        if not self.scan_targets and self._previous is None:
             raise UpdateFailed("No scan targets configured")
 
         previous_by_host = {}
@@ -136,16 +137,60 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
                 previous_device = previous_by_host.get(host)
                 return mark_unreachable(previous_device) if previous_device else None
 
-        devices = [
-            device
-            for device in await asyncio.gather(
-                *(_discover(host) for host in self.scan_targets)
-            )
-            if device is not None
+        queue = [
+            host
+            for host in self.scan_targets + list(previous_by_host)
+            if host.strip()
         ]
+        attempted: set[str] = set()
+        devices_by_host: dict[str, DeviceSnapshot] = {}
+
+        while queue and len(attempted) < 64:
+            batch: list[str] = []
+            while queue and len(batch) < 8:
+                host = queue.pop(0)
+                host_key = _host_key(host)
+                if host_key in attempted:
+                    continue
+                attempted.add(host_key)
+                batch.append(host)
+
+            if not batch:
+                continue
+
+            results = await asyncio.gather(*(_discover(host) for host in batch))
+            for discovered in results:
+                if discovered is None:
+                    continue
+
+                devices_by_host[discovered.host] = discovered
+                for neighbor_host in _neighbor_management_hosts(discovered):
+                    neighbor_key = _host_key(neighbor_host)
+                    if neighbor_key in attempted:
+                        continue
+                    queue.append(neighbor_host)
+
+        devices = list(devices_by_host.values())
         if not devices:
             raise UpdateFailed("Discovery failed for all configured targets")
 
         snapshot = build_topology(devices, self._previous, self._manual_links)
         self._previous = snapshot
         return snapshot
+
+
+def _neighbor_management_hosts(device: DeviceSnapshot) -> list[str]:
+    hosts: list[str] = []
+    for neighbor in device.lldp_neighbors:
+        address = neighbor.remote_management_address
+        if address is None:
+            continue
+        try:
+            hosts.append(str(ipaddress.ip_address(address)))
+        except ValueError:
+            continue
+    return hosts
+
+
+def _host_key(host: str) -> str:
+    return host.strip().lower()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from .const import OIDS
 from .models import DeviceSnapshot, InterfaceSnapshot, LldpNeighbor
@@ -41,19 +41,23 @@ class SnmpClient:
     port: int
     timeout: int
     retries: int
+    _engine: object | None = field(default=None, init=False, repr=False)
+    _engine_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     async def get(self, oid: str) -> str:
         """Get a scalar OID value."""
         self._require_runtime()
+        engine = await self._get_engine()
         target = await UdpTransportTarget.create(
             (self.host, self.port), timeout=self.timeout, retries=self.retries
         )
         error_indication, error_status, error_index, var_binds = await get_cmd(
-            SnmpEngine(),
+            engine,
             CommunityData(self.community, mpModel=1),
             target,
             ContextData(),
             ObjectType(ObjectIdentity(oid)),
+            lookupMib=False,
         )
         if error_indication or error_status:
             raise NetWalkerSnmpError(
@@ -65,17 +69,19 @@ class SnmpClient:
     async def walk(self, oid: str) -> dict[str, str]:
         """Walk a subtree and return value mapping keyed by full OID."""
         self._require_runtime()
+        engine = await self._get_engine()
         target = await UdpTransportTarget.create(
             (self.host, self.port), timeout=self.timeout, retries=self.retries
         )
         result: dict[str, str] = {}
         async for error_indication, error_status, error_index, var_binds in walk_cmd(
-            SnmpEngine(),
+            engine,
             CommunityData(self.community, mpModel=1),
             target,
             ContextData(),
             ObjectType(ObjectIdentity(oid)),
             lexicographicMode=False,
+            lookupMib=False,
         ):
             if error_indication or error_status:
                 raise NetWalkerSnmpError(
@@ -92,6 +98,17 @@ class SnmpClient:
             raise NetWalkerSnmpError(
                 "pysnmp is not available; install integration requirements first"
             )
+
+    async def _get_engine(self):
+        """Create the PySNMP engine off the event loop and reuse it."""
+        if self._engine is not None:
+            return self._engine
+
+        async with self._engine_lock:
+            if self._engine is None:
+                self._engine = await asyncio.to_thread(SnmpEngine)
+
+        return self._engine
 
 
 async def discover_device(

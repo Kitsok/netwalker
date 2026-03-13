@@ -7,6 +7,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .models import TopologySnapshot
 
 
 class NetWalkerTopologyView(HomeAssistantView):
@@ -23,7 +24,8 @@ class NetWalkerTopologyView(HomeAssistantView):
         runtime = self.hass.data[DOMAIN].get(entry_id)
         if runtime is None:
             return self.json_message("Unknown config entry", status_code=404)
-        return self.json(runtime.coordinator.data.as_dict())
+        snapshot = runtime.coordinator.data or TopologySnapshot()
+        return self.json(snapshot.as_dict())
 
 
 class NetWalkerEntriesView(HomeAssistantView):

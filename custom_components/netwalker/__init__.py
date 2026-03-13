@@ -12,6 +12,7 @@ from homeassistant.helpers import config_validation as cv, service
 from .const import DOMAIN, PLATFORMS
 from .coordinator import NetWalkerCoordinator, NetWalkerRuntime
 from .http_api import NetWalkerEntriesView, NetWalkerTopologyView
+from .models import TopologySnapshot
 from .panel import async_register_panel
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,11 +52,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up NetWalker from a config entry."""
     coordinator = NetWalkerCoordinator(hass, entry)
+    coordinator.async_set_updated_data(TopologySnapshot())
     hass.data[DOMAIN][entry.entry_id] = NetWalkerRuntime(coordinator=coordinator)
 
-    await coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    hass.async_create_task(coordinator.async_refresh())
     return True
 
 

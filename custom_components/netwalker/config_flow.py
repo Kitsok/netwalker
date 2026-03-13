@@ -17,6 +17,7 @@ from .const import (
     CONF_SCAN_TARGETS,
     CONF_TIMEOUT,
     CONF_TITLE,
+    DEFAULT_COMMUNITY,
     DEFAULT_PORT,
     DEFAULT_RETRIES,
     DEFAULT_SCAN_INTERVAL,
@@ -38,7 +39,8 @@ def _base_schema(defaults: dict[str, Any]) -> vol.Schema:
                 selector.TextSelectorConfig(multiline=True)
             ),
             vol.Required(
-                CONF_COMMUNITY, default=defaults.get(CONF_COMMUNITY, "public")
+                CONF_COMMUNITY,
+                default=defaults.get(CONF_COMMUNITY, DEFAULT_COMMUNITY),
             ): selector.TextSelector(),
             vol.Required(
                 CONF_PORT, default=defaults.get(CONF_PORT, DEFAULT_PORT)

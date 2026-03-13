@@ -19,6 +19,7 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_SCAN_TARGETS,
     CONF_TIMEOUT,
+    DEFAULT_COMMUNITY,
     DOMAIN,
 )
 from .models import DeviceSnapshot, TopologySnapshot
@@ -75,7 +76,8 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
     def _community(self) -> str:
         return str(
             self.config_entry.options.get(
-                CONF_COMMUNITY, self.config_entry.data.get(CONF_COMMUNITY, "public")
+                CONF_COMMUNITY,
+                self.config_entry.data.get(CONF_COMMUNITY, DEFAULT_COMMUNITY),
             )
         )
 

@@ -291,12 +291,37 @@ def _safe_int(value: str | None) -> int | None:
 
 
 def _parse_sys_descr(sys_descr: str) -> tuple[str | None, str | None]:
-    model_match = re.search(r"RouterOS\s+\S+\s+\(([^)]+)\)", sys_descr)
-    version_match = re.search(r"RouterOS\s+([0-9][^,\s]*)", sys_descr)
-    return (
-        model_match.group(1) if model_match else None,
-        version_match.group(1) if version_match else None,
+    model: str | None = None
+    version: str | None = None
+
+    model_before_version = re.search(
+        r"RouterOS\s+([A-Za-z0-9.+_-]+)\s+([0-9]+(?:\.[0-9A-Za-z_-]+)+)",
+        sys_descr,
     )
+    if model_before_version:
+        model = model_before_version.group(1)
+        version = model_before_version.group(2)
+
+    if version is None:
+        version_match = re.search(r"\b([0-9]+(?:\.[0-9A-Za-z_-]+)+)\b", sys_descr)
+        version = version_match.group(1) if version_match else None
+
+    if model is None:
+        version_before_model = re.search(
+            r"RouterOS\s+[0-9]+(?:\.[0-9A-Za-z_-]+)+\s+\(([^)]+)\)",
+            sys_descr,
+        )
+        if version_before_model:
+            model = version_before_model.group(1)
+
+    if model is None:
+        generic_routeros = re.search(r"RouterOS\s+([A-Za-z0-9.+_-]+)", sys_descr)
+        if generic_routeros:
+            candidate = generic_routeros.group(1)
+            if not re.match(r"^[0-9]", candidate):
+                model = candidate
+
+    return (model, version)
 
 
 def _slugify(value: str) -> str:

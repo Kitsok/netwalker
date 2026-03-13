@@ -13,6 +13,7 @@ class NetWalkerPanel extends HTMLElement {
     this._zoom = 1;
     this._panX = 0;
     this._panY = 0;
+    this._scrollState = {};
   }
 
   set hass(hass) {
@@ -84,6 +85,7 @@ class NetWalkerPanel extends HTMLElement {
   }
 
   _render() {
+    this._captureScrollState();
     const entries = this._entries;
     const data = this._data;
     const devices = data?.devices || [];
@@ -109,12 +111,14 @@ class NetWalkerPanel extends HTMLElement {
         const selectedClass =
           device.id === this._selectedDeviceId ? "node-shell selected" : "node-shell";
         const statusClass = device.reachable ? "node up" : "node down";
+        const model = device.model || this._fallbackModel(device.sys_descr) || "Unknown model";
+        const version = device.routeros_version || this._fallbackVersion(device.sys_descr) || "n/a";
         return `
           <g class="${selectedClass}" data-device-id="${this._escape(device.id)}" tabindex="0">
             <circle cx="${device.x}" cy="${device.y}" r="80" class="${statusClass}"></circle>
             <text x="${device.x}" y="${device.y - 24}" text-anchor="middle" class="node-title">${this._escape(device.name)}</text>
-            <text x="${device.x}" y="${device.y - 2}" text-anchor="middle" class="node-line">${this._escape(device.model || "Unknown model")}</text>
-            <text x="${device.x}" y="${device.y + 20}" text-anchor="middle" class="node-line">RouterOS ${this._escape(device.routeros_version || "n/a")}</text>
+            <text x="${device.x}" y="${device.y - 2}" text-anchor="middle" class="node-line">${this._escape(model)}</text>
+            <text x="${device.x}" y="${device.y + 20}" text-anchor="middle" class="node-line">RouterOS ${this._escape(version)}</text>
             <text x="${device.x}" y="${device.y + 42}" text-anchor="middle" class="node-line">${this._escape(this._summarizeTraffic(device.interfaces || []))}</text>
           </g>
         `;
@@ -265,17 +269,24 @@ class NetWalkerPanel extends HTMLElement {
           border-radius: 14px;
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(255, 255, 255, 0.06);
-          padding: 10px 12px;
+          padding: 8px 12px;
         }
         .interface-name {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
           font-size: 14px;
           font-weight: 600;
-          margin-bottom: 4px;
+          margin-bottom: 2px;
         }
         .interface-meta {
           color: #aab9ce;
           font-size: 12px;
-          line-height: 1.45;
+          line-height: 1.35;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .pill {
           display: inline-flex;
@@ -305,7 +316,7 @@ class NetWalkerPanel extends HTMLElement {
         <div class="toolbar">
           <div class="title-block">
             <div class="title">NetWalker</div>
-            <div class="subtitle">${this._escape(data?.updated_at || "Waiting for topology data")}</div>
+            <div class="subtitle">${this._escape(this._formatTimestamp(data?.updated_at))}</div>
           </div>
           <select class="select" id="entry-select">
             ${
@@ -367,6 +378,7 @@ class NetWalkerPanel extends HTMLElement {
     `;
 
     this._bindEvents();
+    this._restoreScrollState();
   }
 
   _bindEvents() {
@@ -511,26 +523,33 @@ class NetWalkerPanel extends HTMLElement {
               <span class="pill ${iface.oper_status === "up" ? "" : "down"}">${this._escape(iface.oper_status || "unknown")}</span>
             </div>
             <div class="interface-meta">
-              Alias: ${this._escape(iface.alias || "-")}<br>
-              Speed: ${this._escape(iface.speed_mbps ? `${iface.speed_mbps} Mbps` : "-")}<br>
-              RX: ${this._escape(this._formatBits(iface.rx_bps))}<br>
-              TX: ${this._escape(this._formatBits(iface.tx_bps))}
+              ${this._escape(this._formatSpeed(iface.speed_mbps))} | RX ${this._escape(this._formatBits(iface.rx_bps))} | TX ${this._escape(this._formatBits(iface.tx_bps))}
             </div>
           </div>
         `
       )
       .join("");
 
+    const model = device.model || this._fallbackModel(device.sys_descr);
+    const version = device.routeros_version || this._fallbackVersion(device.sys_descr);
+    const metaRows = [
+      ["Host", device.host],
+      ["Model", model || "-"],
+      ["RouterOS", version || "-"],
+      ["Reachable", device.reachable ? "Yes" : "No"],
+      ["Uptime", this._formatUptimeTicks(device.uptime_ticks)],
+      ["System", device.sys_descr || "-"],
+    ];
+
     return `
       <div class="panel-title">${this._escape(device.name)}</div>
       <div class="meta-grid">
-        <div class="meta-key">Host</div><div>${this._escape(device.host)}</div>
-        <div class="meta-key">Model</div><div>${this._escape(device.model || "-")}</div>
-        <div class="meta-key">RouterOS</div><div>${this._escape(device.routeros_version || "-")}</div>
-        <div class="meta-key">Reachable</div><div>${this._escape(device.reachable ? "Yes" : "No")}</div>
-        <div class="meta-key">Uptime</div><div>${this._escape(this._formatUptimeTicks(device.uptime_ticks))}</div>
-        <div class="meta-key">Wireless</div><div>${this._escape(device.wireless_clients ?? "-")}</div>
-        <div class="meta-key">PoE active</div><div>${this._escape(device.poe_ports_active ?? "-")}</div>
+        ${metaRows
+          .map(
+            ([key, value]) =>
+              `<div class="meta-key">${this._escape(key)}</div><div>${this._escape(value)}</div>`
+          )
+          .join("")}
       </div>
       <div class="panel-title">Interfaces</div>
       <div class="interface-list">${interfaces || `<div class="subtitle">No interfaces discovered.</div>`}</div>
@@ -563,6 +582,13 @@ class NetWalkerPanel extends HTMLElement {
     return `${current.toFixed(current >= 100 ? 0 : 1)} ${units[unitIndex]}`;
   }
 
+  _formatSpeed(value) {
+    if (!value) {
+      return "Speed -";
+    }
+    return `Speed ${value} Mbps`;
+  }
+
   _formatUptimeTicks(value) {
     if (!value) {
       return "-";
@@ -572,6 +598,77 @@ class NetWalkerPanel extends HTMLElement {
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${days}d ${hours}h ${minutes}m`;
+  }
+
+  _formatTimestamp(value) {
+    if (!value) {
+      return "Waiting for topology data";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "short",
+    });
+  }
+
+  _fallbackModel(sysDescr) {
+    if (!sysDescr) {
+      return null;
+    }
+    const modelBeforeVersion = sysDescr.match(
+      /RouterOS\s+([A-Za-z0-9.+_-]+)\s+[0-9]+(?:\.[0-9A-Za-z_-]+)+/
+    );
+    if (modelBeforeVersion) {
+      return modelBeforeVersion[1];
+    }
+    const versionBeforeModel = sysDescr.match(
+      /RouterOS\s+[0-9]+(?:\.[0-9A-Za-z_-]+)+\s+\(([^)]+)\)/
+    );
+    return versionBeforeModel ? versionBeforeModel[1] : null;
+  }
+
+  _fallbackVersion(sysDescr) {
+    if (!sysDescr) {
+      return null;
+    }
+    const match = sysDescr.match(/\b([0-9]+(?:\.[0-9A-Za-z_-]+)+)\b/);
+    return match ? match[1] : null;
+  }
+
+  _captureScrollState() {
+    this._scrollState = {
+      hostScrollY: window.scrollY,
+      mapScrollTop: this.shadowRoot.querySelector(".map-shell")?.scrollTop || 0,
+      mapScrollLeft: this.shadowRoot.querySelector(".map-shell")?.scrollLeft || 0,
+      detailScrollTop: this.shadowRoot.querySelector(".detail-shell")?.scrollTop || 0,
+      interfaceScrollTop:
+        this.shadowRoot.querySelector(".interface-list")?.scrollTop || 0,
+    };
+  }
+
+  _restoreScrollState() {
+    const mapShell = this.shadowRoot.querySelector(".map-shell");
+    const detailShell = this.shadowRoot.querySelector(".detail-shell");
+    const interfaceList = this.shadowRoot.querySelector(".interface-list");
+    if (mapShell) {
+      mapShell.scrollTop = this._scrollState.mapScrollTop || 0;
+      mapShell.scrollLeft = this._scrollState.mapScrollLeft || 0;
+    }
+    if (detailShell) {
+      detailShell.scrollTop = this._scrollState.detailScrollTop || 0;
+    }
+    if (interfaceList) {
+      interfaceList.scrollTop = this._scrollState.interfaceScrollTop || 0;
+    }
+    window.scrollTo(0, this._scrollState.hostScrollY || 0);
   }
 
   _escape(value) {

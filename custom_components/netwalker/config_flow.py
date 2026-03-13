@@ -6,6 +6,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -116,15 +117,13 @@ class NetWalkerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
+    @callback
     def async_get_options_flow(config_entry):
-        return NetWalkerOptionsFlow(config_entry)
+        return NetWalkerOptionsFlow()
 
 
 class NetWalkerOptionsFlow(config_entries.OptionsFlow):
     """Handle integration options."""
-
-    def __init__(self, config_entry) -> None:
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         defaults = {**self.config_entry.data, **self.config_entry.options}

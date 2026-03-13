@@ -120,7 +120,8 @@ class NetWalkerPanel extends HTMLElement {
             <text x="${device.x}" y="${device.y - 24}" text-anchor="middle" class="node-title">${this._escape(device.name)}</text>
             <text x="${device.x}" y="${device.y - 2}" text-anchor="middle" class="node-line">${this._escape(model)}</text>
             <text x="${device.x}" y="${device.y + 20}" text-anchor="middle" class="node-line">RouterOS ${this._escape(version)}</text>
-            <text x="${device.x}" y="${device.y + 42}" text-anchor="middle" class="node-line">${this._escape(this._summarizeTraffic(device.interfaces || []))}</text>
+            <text x="${device.x}" y="${device.y + 42}" text-anchor="middle" class="node-line">${this._escape(this._formatNodeTraffic(device.interfaces || [], "rx"))}</text>
+            <text x="${device.x}" y="${device.y + 58}" text-anchor="middle" class="node-line">${this._escape(this._formatNodeTraffic(device.interfaces || [], "tx"))}</text>
           </g>
         `;
       })
@@ -671,6 +672,21 @@ class NetWalkerPanel extends HTMLElement {
       { rx: 0, tx: 0 }
     );
     return `RX ${this._formatBits(totals.rx)}  TX ${this._formatBits(totals.tx)}`;
+  }
+
+  _formatNodeTraffic(interfaces, direction) {
+    const totals = interfaces.reduce(
+      (acc, iface) => {
+        acc.rx += iface.rx_bps || 0;
+        acc.tx += iface.tx_bps || 0;
+        return acc;
+      },
+      { rx: 0, tx: 0 }
+    );
+    if (direction === "tx") {
+      return `↑ ${this._formatBits(totals.tx)}`;
+    }
+    return `↓ ${this._formatBits(totals.rx)}`;
   }
 
   _formatPoeSummary(device) {

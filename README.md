@@ -87,6 +87,30 @@ After setup, Home Assistant will create discovered devices and entities, and the
 3. Open `Configure`.
 4. Update scan targets, polling settings, or manual link overrides.
 
+## Enable SNMP on MikroTik
+
+The integration expects SNMP to be enabled on each MikroTik device you
+want to poll. The example below uses SNMPv2c and restricts access to a
+single Home Assistant IP. Adjust the IP address and community name for
+your environment.
+
+RouterOS CLI example:
+
+```routeros
+/snmp set enabled=yes contact="Home Assistant" location="Network Rack"
+/snmp community set [ find default=yes ] name=netwalker addresses=192.168.1.10/32
+```
+
+Recommended follow-up checks:
+
+- Replace `192.168.1.10/32` with the IP address of your Home Assistant instance.
+- Avoid leaving the default unrestricted `public` community in place.
+- Use the same community string in the NetWalker Home Assistant config flow.
+- Add each MikroTik management IP as a NetWalker seed host in Home Assistant.
+
+Reference: MikroTik RouterOS SNMP documentation
+`https://help.mikrotik.com/docs/spaces/ROS/pages/8978519/SNMP`
+
 ## Repository layout
 
 - `custom_components/netwalker`: Home Assistant integration

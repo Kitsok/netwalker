@@ -6,6 +6,16 @@ Repository URL: `https://github.com/Kitsok/netwalker`
 
 Current version: `0.1.1`
 
+## Table of contents
+
+- [First-version scope](#first-version-scope)
+- [UI-only configuration](#ui-only-configuration)
+- [Install in Home Assistant](#install-in-home-assistant)
+- [Use in Home Assistant](#use-in-home-assistant)
+- [Enable SNMP on MikroTik](#enable-snmp-on-mikrotik)
+- [Repository layout](#repository-layout)
+- [Notes](#notes)
+
 This repository is intentionally structured as a HACS custom integration, not a Home Assistant add-on. HACS can install integrations and frontend assets, but it does not install Supervisor add-ons.
 
 ## First-version scope

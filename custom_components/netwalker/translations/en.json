@@ -1,0 +1,66 @@
+{
+  "config": {
+    "error": {
+      "no_targets": "Enter at least one host or IP address."
+    },
+    "step": {
+      "user": {
+        "title": "Add NetWalker",
+        "description": "Discover MikroTik devices and render a topology map in Home Assistant.",
+        "data": {
+          "title": "Instance name",
+          "scan_targets": "Seed hosts or IPs",
+          "community": "SNMP community",
+          "port": "SNMP port",
+          "scan_interval": "Polling interval (seconds)",
+          "timeout": "Timeout (seconds)",
+          "retries": "Retries"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "no_targets": "Enter at least one host or IP address."
+    },
+    "step": {
+      "init": {
+        "title": "NetWalker options",
+        "data": {
+          "title": "Instance name",
+          "scan_targets": "Seed hosts or IPs",
+          "community": "SNMP community",
+          "port": "SNMP port",
+          "scan_interval": "Polling interval (seconds)",
+          "timeout": "Timeout (seconds)",
+          "retries": "Retries",
+          "manual_links": "Manual links JSON"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "uptime": {
+        "name": "Uptime"
+      },
+      "model": {
+        "name": "Model"
+      },
+      "routeros_version": {
+        "name": "RouterOS version"
+      },
+      "wireless_clients": {
+        "name": "Wireless clients"
+      },
+      "poe_ports_active": {
+        "name": "PoE active ports"
+      }
+    },
+    "binary_sensor": {
+      "reachable": {
+        "name": "Reachable"
+      }
+    }
+  }
+}

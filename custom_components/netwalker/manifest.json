@@ -1,0 +1,12 @@
+{
+  "domain": "netwalker",
+  "name": "NetWalker",
+  "codeowners": ["@kitsok"],
+  "config_flow": true,
+  "documentation": "https://github.com/kitsok/netwalker",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "loggers": ["custom_components.netwalker"],
+  "requirements": ["pysnmp>=7.1.16"],
+  "version": "0.1.0"
+}

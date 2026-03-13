@@ -44,6 +44,8 @@ OIDS = {
     "mtxr_wl_cmr_tab_entry_count": "1.3.6.1.4.1.14988.1.1.1.6.0",
     "mtxr_wl_ap_client_count": "1.3.6.1.4.1.14988.1.1.1.3.1.6",
     "mtxr_wl_cm_reg_client_count": "1.3.6.1.4.1.14988.1.1.1.7.1.2",
+    "mtxr_wifi_registration_mac": "1.3.6.1.4.1.14988.1.1.21.4.1.1",
+    "mtxr_wifi_registration_authorized": "1.3.6.1.4.1.14988.1.1.21.4.1.18",
     "mtxr_poe_status": "1.3.6.1.4.1.14988.1.1.15.1.1.3",
     "mtxr_poe_power": "1.3.6.1.4.1.14988.1.1.15.1.1.6",
 }

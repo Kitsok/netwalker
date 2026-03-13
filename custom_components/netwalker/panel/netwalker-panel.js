@@ -14,6 +14,7 @@ class NetWalkerPanel extends HTMLElement {
     this._panX = 0;
     this._panY = 0;
     this._scrollState = {};
+    this._interfaceSort = "traffic";
   }
 
   set hass(hass) {
@@ -250,6 +251,19 @@ class NetWalkerPanel extends HTMLElement {
           font-weight: 600;
           margin-bottom: 12px;
         }
+        .section-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        .section-header .panel-title {
+          margin-bottom: 0;
+        }
+        .sort-select {
+          min-width: 150px;
+        }
         .meta-grid {
           display: grid;
           grid-template-columns: 112px 1fr;
@@ -268,59 +282,65 @@ class NetWalkerPanel extends HTMLElement {
         }
         .interface-card {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          align-items: center;
-          gap: 10px;
+          gap: 8px;
           border-radius: 14px;
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(255, 255, 255, 0.06);
-          padding: 8px 12px;
+          padding: 10px 12px;
         }
         .interface-name {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
           font-size: 14px;
           font-weight: 600;
-          margin-bottom: 0;
-          min-width: 0;
-        }
-        .interface-meta {
-          color: #aab9ce;
-          font-size: 12px;
-          line-height: 1.35;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
-        .pill {
+        .interface-speed {
+          color: #aab9ce;
+          font-size: 12px;
+          line-height: 1.3;
+        }
+        .interface-icons {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .metric-pill {
           display: inline-flex;
           align-items: center;
+          gap: 5px;
           border-radius: 999px;
-          background: rgba(103, 198, 124, 0.14);
-          color: #9fe2ad;
-          padding: 2px 8px;
-          font-size: 11px;
-          letter-spacing: 0.03em;
-        }
-        .pill.down {
-          background: rgba(124, 130, 141, 0.18);
-          color: #cad1d9;
-        }
-        .poe-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          border-radius: 999px;
-          background: rgba(231, 170, 85, 0.16);
-          color: #ffd089;
+          background: rgba(255, 255, 255, 0.06);
+          color: #dbe6f5;
           padding: 2px 8px;
           font-size: 11px;
           letter-spacing: 0.02em;
           white-space: nowrap;
         }
-        .poe-badge.inactive {
+        .metric-pill.oper-up {
+          background: rgba(103, 198, 124, 0.14);
+          color: #9fe2ad;
+        }
+        .metric-pill.oper-down {
+          background: rgba(124, 130, 141, 0.18);
+          color: #cad1d9;
+        }
+        .metric-pill.oper-other {
+          background: rgba(90, 134, 190, 0.16);
+          color: #b9d4ff;
+        }
+        .metric-pill.rx {
+          color: #8fd8ff;
+        }
+        .metric-pill.tx {
+          color: #ffd59a;
+        }
+        .metric-pill.poe {
+          border-radius: 999px;
+          background: rgba(231, 170, 85, 0.16);
+          color: #ffd089;
+        }
+        .metric-pill.poe.inactive {
           background: rgba(124, 130, 141, 0.18);
           color: #cad1d9;
         }
@@ -422,6 +442,14 @@ class NetWalkerPanel extends HTMLElement {
           });
         }
         await this._loadTopology();
+      };
+    }
+
+    const interfaceSort = this.shadowRoot.getElementById("interface-sort");
+    if (interfaceSort) {
+      interfaceSort.onchange = (event) => {
+        this._interfaceSort = event.target.value || "traffic";
+        this._render();
       };
     }
 
@@ -534,21 +562,20 @@ class NetWalkerPanel extends HTMLElement {
       `;
     }
 
-    const interfaces = (device.interfaces || [])
-      .slice()
-      .sort((left, right) => left.name.localeCompare(right.name))
+    const interfaces = this._sortInterfaces(device.interfaces || [])
       .map(
         (iface) => {
-          const poeBadge = this._renderPoeBadge(iface);
           return `
           <div class="interface-card">
-            <div class="interface-name">
-              ${this._escape(iface.name)}
-              <span class="pill ${iface.oper_status === "up" ? "" : "down"}">${this._escape(iface.oper_status || "unknown")}</span>
-              ${poeBadge}
+            <div class="interface-name" title="${this._escape(iface.name)}">${this._escape(iface.name)}</div>
+            <div class="interface-speed">
+              ${this._escape(this._formatSpeed(iface.speed_mbps))}
             </div>
-            <div class="interface-meta">
-              ${this._escape(this._formatSpeed(iface.speed_mbps))} | RX ${this._escape(this._formatBits(iface.rx_bps))} | TX ${this._escape(this._formatBits(iface.tx_bps))}
+            <div class="interface-icons">
+              ${this._renderOperPill(iface)}
+              <span class="metric-pill rx">&darr; ${this._escape(this._formatBits(iface.rx_bps))}</span>
+              <span class="metric-pill tx">&uarr; ${this._escape(this._formatBits(iface.tx_bps))}</span>
+              ${this._renderPoeBadge(iface)}
             </div>
           </div>
         `
@@ -579,9 +606,59 @@ class NetWalkerPanel extends HTMLElement {
           )
           .join("")}
       </div>
-      <div class="panel-title">Interfaces</div>
+      <div class="section-header">
+        <div class="panel-title">Interfaces</div>
+        <select class="select sort-select" id="interface-sort">
+          <option value="traffic" ${this._interfaceSort === "traffic" ? "selected" : ""}>Traffic</option>
+          <option value="poe" ${this._interfaceSort === "poe" ? "selected" : ""}>PoE</option>
+          <option value="speed" ${this._interfaceSort === "speed" ? "selected" : ""}>Speed</option>
+          <option value="name" ${this._interfaceSort === "name" ? "selected" : ""}>Name</option>
+        </select>
+      </div>
       <div class="interface-list">${interfaces || `<div class="subtitle">No interfaces discovered.</div>`}</div>
     `;
+  }
+
+  _sortInterfaces(interfaces) {
+    return interfaces
+      .slice()
+      .sort((left, right) => {
+        const byTraffic = this._compareTraffic(right, left);
+        const byPoe = this._comparePoe(right, left);
+        const bySpeed = this._compareSpeed(right, left);
+
+        if (this._interfaceSort === "poe") {
+          return byPoe || byTraffic || bySpeed || left.name.localeCompare(right.name);
+        }
+        if (this._interfaceSort === "speed") {
+          return bySpeed || byTraffic || byPoe || left.name.localeCompare(right.name);
+        }
+        if (this._interfaceSort === "name") {
+          return left.name.localeCompare(right.name);
+        }
+        return byTraffic || byPoe || bySpeed || left.name.localeCompare(right.name);
+      });
+  }
+
+  _compareTraffic(left, right) {
+    return this._trafficScore(left) - this._trafficScore(right);
+  }
+
+  _comparePoe(left, right) {
+    return this._poeScore(left) - this._poeScore(right);
+  }
+
+  _compareSpeed(left, right) {
+    return (left.speed_mbps || 0) - (right.speed_mbps || 0);
+  }
+
+  _trafficScore(iface) {
+    return (iface.rx_bps || 0) + (iface.tx_bps || 0);
+  }
+
+  _poeScore(iface) {
+    const active = iface.poe_status === "powered_on" ? 1 : 0;
+    return active * 1000000000 + (iface.poe_power_watts || 0);
   }
 
   _summarizeTraffic(interfaces) {
@@ -634,18 +711,26 @@ class NetWalkerPanel extends HTMLElement {
     return `Speed ${value} Mbps`;
   }
 
+  _renderOperPill(iface) {
+    const status = iface.oper_status || "unknown";
+    const statusClass =
+      status === "up" ? "oper-up" : status === "down" ? "oper-down" : "oper-other";
+    const icon = status === "up" ? "●" : status === "down" ? "○" : "◌";
+    return `<span class="metric-pill ${statusClass}">${icon} ${this._escape(status.replaceAll("_", " "))}</span>`;
+  }
+
   _renderPoeBadge(iface) {
     if (!iface.poe_status) {
       return "";
     }
     if (iface.poe_status === "powered_on") {
       const watts = iface.poe_power_watts != null ? `${iface.poe_power_watts.toFixed(1)} W` : "on";
-      return `<span class="poe-badge">&#9889; ${this._escape(watts)}</span>`;
+      return `<span class="metric-pill poe">&#9889; ${this._escape(watts)}</span>`;
     }
     const label = iface.poe_status
       .replaceAll("_", " ")
       .replace(/\b\w/g, (char) => char.toUpperCase());
-    return `<span class="poe-badge inactive">PoE ${this._escape(label)}</span>`;
+    return `<span class="metric-pill poe inactive">&#9889; ${this._escape(label)}</span>`;
   }
 
   _formatUptimeTicks(value) {

@@ -153,6 +153,12 @@ async def discover_device(
     wl_cm_reg_clients_task = asyncio.create_task(
         _safe_walk_optional(client, OIDS["mtxr_wl_cm_reg_client_count"])
     )
+    wifi_reg_mac_task = asyncio.create_task(
+        _safe_walk_optional(client, OIDS["mtxr_wifi_registration_mac"])
+    )
+    wifi_reg_authorized_task = asyncio.create_task(
+        _safe_walk_optional(client, OIDS["mtxr_wifi_registration_authorized"])
+    )
     poe_status_task = asyncio.create_task(
         _safe_walk_optional(client, OIDS["mtxr_poe_status"])
     )
@@ -179,6 +185,8 @@ async def discover_device(
             wl_cmr_count,
             wl_ap_clients,
             wl_cm_reg_clients,
+            wifi_reg_macs,
+            wifi_reg_authorized,
             poe_statuses,
             poe_powers,
         ) = await asyncio.gather(
@@ -199,6 +207,8 @@ async def discover_device(
             wl_cmr_count_task,
             wl_ap_clients_task,
             wl_cm_reg_clients_task,
+            wifi_reg_mac_task,
+            wifi_reg_authorized_task,
             poe_status_task,
             poe_power_task,
         )
@@ -237,7 +247,12 @@ async def discover_device(
         interfaces=interfaces,
         lldp_neighbors=neighbors,
         wireless_clients=_derive_wireless_clients(
-            wl_rtab_count, wl_cmr_count, wl_ap_clients, wl_cm_reg_clients
+            wl_rtab_count,
+            wl_cmr_count,
+            wl_ap_clients,
+            wl_cm_reg_clients,
+            wifi_reg_macs,
+            wifi_reg_authorized,
         ),
         poe_ports_active=_count_active_poe_ports(poe_statuses),
     )
@@ -405,12 +420,16 @@ def _derive_wireless_clients(
     wl_cmr_count: str | None,
     wl_ap_clients: dict[str, str],
     wl_cm_reg_clients: dict[str, str],
+    wifi_reg_macs: dict[str, str],
+    wifi_reg_authorized: dict[str, str],
 ) -> int | None:
     candidates = [
         _safe_int(wl_rtab_count),
         _safe_int(wl_cmr_count),
         _sum_int_values(wl_ap_clients),
         _sum_int_values(wl_cm_reg_clients),
+        _count_authorized_wifi_registrations(wifi_reg_authorized),
+        _count_rows(wifi_reg_macs),
     ]
     present = [value for value in candidates if value is not None]
     return max(present) if present else None
@@ -428,6 +447,25 @@ def _sum_int_values(values: dict[str, str]) -> int | None:
     parsed = [_safe_int(value) for value in values.values()]
     present = [value for value in parsed if value is not None]
     return sum(present) if present else None
+
+
+def _count_rows(values: dict[str, str]) -> int | None:
+    if not values:
+        return None
+    return len(values)
+
+
+def _count_authorized_wifi_registrations(values: dict[str, str]) -> int | None:
+    if not values:
+        return None
+    return sum(1 for value in values.values() if _is_truthy_value(value))
+
+
+def _is_truthy_value(value: str | None) -> bool:
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    return normalized in {"1", "true", "true(1)", "yes", "on"}
 
 
 def _decode_poe_status(value: str | None) -> str | None:

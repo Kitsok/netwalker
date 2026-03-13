@@ -7,6 +7,7 @@ import ipaddress
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+import re
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -21,6 +22,7 @@ from .const import (
     CONF_SCAN_TARGETS,
     CONF_TIMEOUT,
     DEFAULT_COMMUNITY,
+    MAX_DISCOVERY_HOSTS,
     DOMAIN,
 )
 from .models import DeviceSnapshot, TopologySnapshot
@@ -35,6 +37,14 @@ class NetWalkerRuntime:
     """Runtime objects stored for one config entry."""
 
     coordinator: "NetWalkerCoordinator"
+
+
+@dataclass(slots=True)
+class DiscoveryTarget:
+    """One pending discovery target."""
+
+    host: str
+    strict: bool = True
 
 
 class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
@@ -123,42 +133,43 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
                 device.host: device for device in self._previous.devices.values()
             }
 
-        async def _discover(host: str) -> DeviceSnapshot | None:
+        async def _discover(target: DiscoveryTarget) -> DeviceSnapshot | None:
             try:
                 return await discover_device(
-                    host=host,
+                    host=target.host,
                     community=self._community,
                     port=self._port,
                     timeout=self._timeout,
                     retries=self._retries,
                 )
             except Exception as err:
-                _LOGGER.warning("Discovery failed for %s: %s", host, err)
-                previous_device = previous_by_host.get(host)
+                if target.strict:
+                    _LOGGER.warning("Discovery failed for %s: %s", target.host, err)
+                else:
+                    _LOGGER.debug("Discovery probe failed for %s: %s", target.host, err)
+                previous_device = previous_by_host.get(target.host)
                 return mark_unreachable(previous_device) if previous_device else None
 
-        queue = [
-            host
-            for host in self.scan_targets + list(previous_by_host)
-            if host.strip()
+        queue = _configured_discovery_targets(self.scan_targets) + [
+            DiscoveryTarget(host=host, strict=True) for host in previous_by_host if host.strip()
         ]
         attempted: set[str] = set()
         devices_by_host: dict[str, DeviceSnapshot] = {}
 
-        while queue and len(attempted) < 64:
-            batch: list[str] = []
+        while queue and len(attempted) < MAX_DISCOVERY_HOSTS:
+            batch: list[DiscoveryTarget] = []
             while queue and len(batch) < 8:
-                host = queue.pop(0)
-                host_key = _host_key(host)
+                target = queue.pop(0)
+                host_key = _host_key(target.host)
                 if host_key in attempted:
                     continue
                 attempted.add(host_key)
-                batch.append(host)
+                batch.append(target)
 
             if not batch:
                 continue
 
-            results = await asyncio.gather(*(_discover(host) for host in batch))
+            results = await asyncio.gather(*(_discover(target) for target in batch))
             for discovered in results:
                 if discovered is None:
                     continue
@@ -168,7 +179,7 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
                     neighbor_key = _host_key(neighbor_host)
                     if neighbor_key in attempted:
                         continue
-                    queue.append(neighbor_host)
+                    queue.append(DiscoveryTarget(host=neighbor_host, strict=True))
 
         devices = list(devices_by_host.values())
         if not devices:
@@ -194,3 +205,107 @@ def _neighbor_management_hosts(device: DeviceSnapshot) -> list[str]:
 
 def _host_key(host: str) -> str:
     return host.strip().lower()
+
+
+def _configured_discovery_targets(raw_targets: list[str]) -> list[DiscoveryTarget]:
+    expanded: list[DiscoveryTarget] = []
+    for raw_target in raw_targets:
+        expanded.extend(_expand_discovery_target(raw_target))
+    return _deduplicate_targets(expanded)
+
+
+def _expand_discovery_target(raw_target: str) -> list[DiscoveryTarget]:
+    target = raw_target.strip()
+    if not target:
+        return []
+
+    cidr_hosts = _expand_cidr_target(target)
+    if cidr_hosts is not None:
+        return [DiscoveryTarget(host=host, strict=False) for host in cidr_hosts]
+
+    range_hosts = _expand_ip_range_target(target)
+    if range_hosts is not None:
+        return [DiscoveryTarget(host=host, strict=False) for host in range_hosts]
+
+    return [DiscoveryTarget(host=target, strict=True)]
+
+
+def _expand_cidr_target(target: str) -> list[str] | None:
+    if "/" not in target:
+        return None
+    try:
+        network = ipaddress.ip_network(target, strict=False)
+    except ValueError:
+        return None
+
+    hosts = [str(address) for address in network.hosts()]
+    if not hosts:
+        hosts = [str(network.network_address)]
+    return _limit_expanded_hosts(target, hosts)
+
+
+def _expand_ip_range_target(target: str) -> list[str] | None:
+    if "-" not in target:
+        return None
+
+    full_match = re.fullmatch(
+        r"\s*(\d+\.\d+\.\d+\.\d+)\s*-\s*(\d+\.\d+\.\d+\.\d+)\s*", target
+    )
+    if full_match:
+        try:
+            start = ipaddress.ip_address(full_match.group(1))
+            end = ipaddress.ip_address(full_match.group(2))
+        except ValueError:
+            return []
+        if start.version != end.version or int(end) < int(start):
+            return []
+        hosts = [str(ipaddress.ip_address(value)) for value in range(int(start), int(end) + 1)]
+        return _limit_expanded_hosts(target, hosts)
+
+    short_match = re.fullmatch(
+        r"\s*(\d+\.\d+\.\d+)\.(\d+)\s*-\s*(\d+)\s*", target
+    )
+    if not short_match:
+        return None
+
+    base = short_match.group(1)
+    start_octet = int(short_match.group(2))
+    end_octet = int(short_match.group(3))
+    if (
+        start_octet < 0
+        or end_octet < 0
+        or start_octet > 255
+        or end_octet > 255
+        or end_octet < start_octet
+    ):
+        return []
+    hosts = [f"{base}.{value}" for value in range(start_octet, end_octet + 1)]
+    return _limit_expanded_hosts(target, hosts)
+
+
+def _limit_expanded_hosts(target: str, hosts: list[str]) -> list[str]:
+    if len(hosts) <= MAX_DISCOVERY_HOSTS:
+        return hosts
+
+    _LOGGER.warning(
+        "Discovery target %s expands to %s hosts; limiting to the first %s",
+        target,
+        len(hosts),
+        MAX_DISCOVERY_HOSTS,
+    )
+    return hosts[:MAX_DISCOVERY_HOSTS]
+
+
+def _deduplicate_targets(targets: list[DiscoveryTarget]) -> list[DiscoveryTarget]:
+    deduplicated: list[DiscoveryTarget] = []
+    seen: dict[str, int] = {}
+    for target in targets:
+        key = _host_key(target.host)
+        previous_index = seen.get(key)
+        if previous_index is None:
+            seen[key] = len(deduplicated)
+            deduplicated.append(target)
+            continue
+        if target.strict and not deduplicated[previous_index].strict:
+            deduplicated[previous_index] = target
+    return deduplicated

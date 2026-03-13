@@ -4,7 +4,7 @@ NetWalker is a Home Assistant custom integration for discovering MikroTik device
 
 Repository URL: `https://github.com/Kitsok/netwalker`
 
-Current version: `0.4.0`
+Current version: `0.5.0`
 
 ## Table of contents
 
@@ -22,8 +22,9 @@ This repository is intentionally structured as a HACS custom integration, not a 
 
 - UI-only configuration with Home Assistant config flow and options flow
 - SNMPv2c polling
-- Seed hosts entered in the web UI
-- LLDP management-address expansion from those seed hosts
+- Discovery targets entered in the web UI
+- Host, CIDR, and IPv4 range expansion from those discovery targets
+- LLDP management-address expansion from discovered devices
 - Device discovery using standard SNMP system and interface tables
 - Link inference from LLDP plus optional manual UI overrides
 - Home Assistant entities and devices
@@ -35,7 +36,8 @@ This repository is intentionally structured as a HACS custom integration, not a 
 No YAML is required. All configuration is stored in Home Assistant config entries:
 
 - title
-- seed hosts
+- discovery targets
+- support for single hosts, CIDR subnets, and IPv4 ranges
 - automatic expansion to LLDP neighbors that expose management IPs
 - SNMP community
 - polling interval
@@ -59,7 +61,8 @@ The first version keeps manual overrides in the web UI as JSON text. That satisf
 9. Search for `NetWalker`.
 10. Enter:
     - instance name
-    - seed hosts or IPs, one per line or comma-separated
+    - discovery targets, one per line or comma-separated
+    - accepted formats: single host, CIDR subnet like `192.168.1.0/24`, or IPv4 range like `192.168.1.10-30`
     - SNMP community
     - SNMP port
     - polling interval
@@ -68,9 +71,9 @@ The first version keeps manual overrides in the web UI as JSON text. That satisf
 11. Submit the form.
 
 After setup, Home Assistant will create discovered devices and entities, and the `NetWalker` sidebar panel will appear automatically.
-Configured seed hosts act as entry points. NetWalker will also try to
+Configured discovery targets act as entry points. NetWalker will also try to
 discover additional MikroTik devices by following LLDP management
-addresses learned from those seeds.
+addresses learned from those devices.
 
 ### Option 2: Manual install
 
@@ -121,7 +124,7 @@ Recommended follow-up checks:
 - Replace `192.168.1.10/32` with the IP address of your Home Assistant instance.
 - Avoid leaving the default unrestricted `public` community in place.
 - Use the same community string in the NetWalker Home Assistant config flow.
-- Add each MikroTik management IP as a NetWalker seed host in Home Assistant.
+- Add each MikroTik management IP, management subnet, or a small IPv4 range as a NetWalker discovery target in Home Assistant.
 
 Reference: MikroTik RouterOS SNMP documentation
 `https://help.mikrotik.com/docs/spaces/ROS/pages/8978519/SNMP`

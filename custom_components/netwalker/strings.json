@@ -1,7 +1,7 @@
 {
   "config": {
     "error": {
-      "no_targets": "Enter at least one host or IP address."
+      "no_targets": "Enter at least one host, subnet, or IP range."
     },
     "step": {
       "user": {
@@ -9,7 +9,7 @@
         "description": "Discover MikroTik devices and render a topology map in Home Assistant.",
         "data": {
           "title": "Instance name",
-          "scan_targets": "Seed hosts or IPs",
+          "scan_targets": "Discovery targets",
           "community": "SNMP community",
           "port": "SNMP port",
           "scan_interval": "Polling interval (seconds)",
@@ -21,14 +21,14 @@
   },
   "options": {
     "error": {
-      "no_targets": "Enter at least one host or IP address."
+      "no_targets": "Enter at least one host, subnet, or IP range."
     },
     "step": {
       "init": {
         "title": "NetWalker options",
         "data": {
           "title": "Instance name",
-          "scan_targets": "Seed hosts or IPs",
+          "scan_targets": "Discovery targets",
           "community": "SNMP community",
           "port": "SNMP port",
           "scan_interval": "Polling interval (seconds)",

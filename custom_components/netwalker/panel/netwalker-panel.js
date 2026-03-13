@@ -706,9 +706,9 @@ class NetWalkerPanel extends HTMLElement {
 
   _formatSpeed(value) {
     if (!value) {
-      return "Speed -";
+      return "-";
     }
-    return `Speed ${value} Mbps`;
+    return `${value} Mbps`;
   }
 
   _renderOperPill(iface) {

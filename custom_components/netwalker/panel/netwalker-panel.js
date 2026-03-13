@@ -22,7 +22,7 @@ class NetWalkerPanel extends HTMLElement {
       this._loadEntries();
     } else if (Date.now() - this._lastLoaded > 5000) {
       this._loadTopology();
-    } else {
+    } else if (!this.shadowRoot.innerHTML) {
       this._render();
     }
   }
@@ -198,6 +198,7 @@ class NetWalkerPanel extends HTMLElement {
         }
         .detail-shell {
           padding: 18px;
+          overflow: auto;
         }
         .error-shell,
         .empty-shell {
@@ -266,6 +267,10 @@ class NetWalkerPanel extends HTMLElement {
           overflow: auto;
         }
         .interface-card {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 10px;
           border-radius: 14px;
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(255, 255, 255, 0.06);
@@ -274,11 +279,12 @@ class NetWalkerPanel extends HTMLElement {
         .interface-name {
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          flex-wrap: wrap;
           gap: 8px;
           font-size: 14px;
           font-weight: 600;
-          margin-bottom: 2px;
+          margin-bottom: 0;
+          min-width: 0;
         }
         .interface-meta {
           color: #aab9ce;
@@ -299,6 +305,22 @@ class NetWalkerPanel extends HTMLElement {
           letter-spacing: 0.03em;
         }
         .pill.down {
+          background: rgba(124, 130, 141, 0.18);
+          color: #cad1d9;
+        }
+        .poe-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          border-radius: 999px;
+          background: rgba(231, 170, 85, 0.16);
+          color: #ffd089;
+          padding: 2px 8px;
+          font-size: 11px;
+          letter-spacing: 0.02em;
+          white-space: nowrap;
+        }
+        .poe-badge.inactive {
           background: rgba(124, 130, 141, 0.18);
           color: #cad1d9;
         }
@@ -378,7 +400,7 @@ class NetWalkerPanel extends HTMLElement {
     `;
 
     this._bindEvents();
-    this._restoreScrollState();
+    requestAnimationFrame(() => this._restoreScrollState());
   }
 
   _bindEvents() {
@@ -516,17 +538,21 @@ class NetWalkerPanel extends HTMLElement {
       .slice()
       .sort((left, right) => left.name.localeCompare(right.name))
       .map(
-        (iface) => `
+        (iface) => {
+          const poeBadge = this._renderPoeBadge(iface);
+          return `
           <div class="interface-card">
             <div class="interface-name">
               ${this._escape(iface.name)}
               <span class="pill ${iface.oper_status === "up" ? "" : "down"}">${this._escape(iface.oper_status || "unknown")}</span>
+              ${poeBadge}
             </div>
             <div class="interface-meta">
               ${this._escape(this._formatSpeed(iface.speed_mbps))} | RX ${this._escape(this._formatBits(iface.rx_bps))} | TX ${this._escape(this._formatBits(iface.tx_bps))}
             </div>
           </div>
         `
+        }
       )
       .join("");
 
@@ -538,6 +564,8 @@ class NetWalkerPanel extends HTMLElement {
       ["RouterOS", version || "-"],
       ["Reachable", device.reachable ? "Yes" : "No"],
       ["Uptime", this._formatUptimeTicks(device.uptime_ticks)],
+      ["Wireless", device.wireless_clients ?? "-"],
+      ["PoE active", device.poe_ports_active ?? "-"],
       ["System", device.sys_descr || "-"],
     ];
 
@@ -587,6 +615,20 @@ class NetWalkerPanel extends HTMLElement {
       return "Speed -";
     }
     return `Speed ${value} Mbps`;
+  }
+
+  _renderPoeBadge(iface) {
+    if (!iface.poe_status) {
+      return "";
+    }
+    if (iface.poe_status === "powered_on") {
+      const watts = iface.poe_power_watts != null ? `${iface.poe_power_watts.toFixed(1)} W` : "on";
+      return `<span class="poe-badge">&#9889; ${this._escape(watts)}</span>`;
+    }
+    const label = iface.poe_status
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return `<span class="poe-badge inactive">PoE ${this._escape(label)}</span>`;
   }
 
   _formatUptimeTicks(value) {

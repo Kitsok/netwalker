@@ -141,6 +141,24 @@ async def discover_device(
     lldp_rem_name_task = asyncio.create_task(client.walk(OIDS["lldp_rem_sys_name"]))
     lldp_rem_port_task = asyncio.create_task(client.walk(OIDS["lldp_rem_port_desc"]))
     lldp_rem_addr_task = asyncio.create_task(client.walk(OIDS["lldp_rem_man_addr"]))
+    wl_rtab_count_task = asyncio.create_task(
+        _safe_get_optional(client, OIDS["mtxr_wl_rtab_entry_count"])
+    )
+    wl_cmr_count_task = asyncio.create_task(
+        _safe_get_optional(client, OIDS["mtxr_wl_cmr_tab_entry_count"])
+    )
+    wl_ap_clients_task = asyncio.create_task(
+        _safe_walk_optional(client, OIDS["mtxr_wl_ap_client_count"])
+    )
+    wl_cm_reg_clients_task = asyncio.create_task(
+        _safe_walk_optional(client, OIDS["mtxr_wl_cm_reg_client_count"])
+    )
+    poe_status_task = asyncio.create_task(
+        _safe_walk_optional(client, OIDS["mtxr_poe_status"])
+    )
+    poe_power_task = asyncio.create_task(
+        _safe_walk_optional(client, OIDS["mtxr_poe_power"])
+    )
 
     try:
         (
@@ -157,6 +175,12 @@ async def discover_device(
             lldp_remote_names,
             lldp_remote_ports,
             lldp_remote_addrs,
+            wl_rtab_count,
+            wl_cmr_count,
+            wl_ap_clients,
+            wl_cm_reg_clients,
+            poe_statuses,
+            poe_powers,
         ) = await asyncio.gather(
             sys_name_task,
             sys_descr_task,
@@ -171,6 +195,12 @@ async def discover_device(
             lldp_rem_name_task,
             lldp_rem_port_task,
             lldp_rem_addr_task,
+            wl_rtab_count_task,
+            wl_cmr_count_task,
+            wl_ap_clients_task,
+            wl_cm_reg_clients_task,
+            poe_status_task,
+            poe_power_task,
         )
     except Exception as err:
         _LOGGER.debug("Discovery failed for %s: %s", host, err)
@@ -179,7 +209,14 @@ async def discover_device(
     device_id = _slugify(sys_name or host)
     model, routeros_version = _parse_sys_descr(sys_descr)
     interfaces = _build_interfaces(
-        if_names, if_aliases, if_states, if_speeds, if_ins, if_outs
+        if_names,
+        if_aliases,
+        if_states,
+        if_speeds,
+        if_ins,
+        if_outs,
+        poe_statuses,
+        poe_powers,
     )
     neighbors = _build_neighbors(
         lldp_local_ports=lldp_local_ports,
@@ -199,12 +236,30 @@ async def discover_device(
         reachable=True,
         interfaces=interfaces,
         lldp_neighbors=neighbors,
+        wireless_clients=_derive_wireless_clients(
+            wl_rtab_count, wl_cmr_count, wl_ap_clients, wl_cm_reg_clients
+        ),
+        poe_ports_active=_count_active_poe_ports(poe_statuses),
     )
 
 
 def mark_unreachable(device: DeviceSnapshot) -> DeviceSnapshot:
     """Preserve the last known device state while marking it unreachable."""
     return replace(device, reachable=False)
+
+
+async def _safe_get_optional(client: SnmpClient, oid: str) -> str | None:
+    try:
+        return await client.get(oid)
+    except Exception:
+        return None
+
+
+async def _safe_walk_optional(client: SnmpClient, oid: str) -> dict[str, str]:
+    try:
+        return await client.walk(oid)
+    except Exception:
+        return {}
 
 
 def _build_interfaces(
@@ -214,6 +269,8 @@ def _build_interfaces(
     if_speeds: dict[str, str],
     if_ins: dict[str, str],
     if_outs: dict[str, str],
+    poe_statuses: dict[str, str],
+    poe_powers: dict[str, str],
 ) -> dict[str, InterfaceSnapshot]:
     interfaces: dict[str, InterfaceSnapshot] = {}
     for oid, name in if_names.items():
@@ -228,6 +285,12 @@ def _build_interfaces(
             speed_mbps=_safe_int(if_speeds.get(f"{OIDS['if_high_speed']}.{index}")),
             in_octets=_safe_int(if_ins.get(f"{OIDS['if_in_octets']}.{index}")),
             out_octets=_safe_int(if_outs.get(f"{OIDS['if_out_octets']}.{index}")),
+            poe_status=_decode_poe_status(
+                poe_statuses.get(f"{OIDS['mtxr_poe_status']}.{index}")
+            ),
+            poe_power_watts=_decode_poe_power_watts(
+                poe_powers.get(f"{OIDS['mtxr_poe_power']}.{index}")
+            ),
         )
     return interfaces
 
@@ -335,6 +398,64 @@ def _safe_int(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _derive_wireless_clients(
+    wl_rtab_count: str | None,
+    wl_cmr_count: str | None,
+    wl_ap_clients: dict[str, str],
+    wl_cm_reg_clients: dict[str, str],
+) -> int | None:
+    candidates = [
+        _safe_int(wl_rtab_count),
+        _safe_int(wl_cmr_count),
+        _sum_int_values(wl_ap_clients),
+        _sum_int_values(wl_cm_reg_clients),
+    ]
+    present = [value for value in candidates if value is not None]
+    return max(present) if present else None
+
+
+def _count_active_poe_ports(poe_statuses: dict[str, str]) -> int | None:
+    if not poe_statuses:
+        return None
+    return sum(1 for value in poe_statuses.values() if _safe_int(value) == 3)
+
+
+def _sum_int_values(values: dict[str, str]) -> int | None:
+    if not values:
+        return None
+    parsed = [_safe_int(value) for value in values.values()]
+    present = [value for value in parsed if value is not None]
+    return sum(present) if present else None
+
+
+def _decode_poe_status(value: str | None) -> str | None:
+    mapping = {
+        "1": "disabled",
+        "2": "waiting_for_load",
+        "3": "powered_on",
+        "4": "overload",
+        "5": "short_circuit",
+        "6": "voltage_too_low",
+        "7": "current_too_low",
+        "8": "power_reset",
+        "9": "voltage_too_high",
+        "10": "controller_error",
+        "11": "controller_upgrade",
+        "12": "poe_in_detected",
+        "13": "no_valid_psu",
+        "14": "controller_init",
+        "15": "low_voltage_too_low",
+    }
+    return mapping.get(value, value)
+
+
+def _decode_poe_power_watts(value: str | None) -> float | None:
+    raw = _safe_int(value)
+    if raw is None:
+        return None
+    return raw / 10
 
 
 def _parse_sys_descr(sys_descr: str) -> tuple[str | None, str | None]:

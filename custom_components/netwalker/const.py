@@ -40,4 +40,10 @@ OIDS = {
     "lldp_rem_sys_name": "1.0.8802.1.1.2.1.4.1.1.9",
     "lldp_rem_port_desc": "1.0.8802.1.1.2.1.4.1.1.8",
     "lldp_rem_man_addr": "1.0.8802.1.1.2.1.4.2.1.2",
+    "mtxr_wl_rtab_entry_count": "1.3.6.1.4.1.14988.1.1.1.4.0",
+    "mtxr_wl_cmr_tab_entry_count": "1.3.6.1.4.1.14988.1.1.1.6.0",
+    "mtxr_wl_ap_client_count": "1.3.6.1.4.1.14988.1.1.1.3.1.6",
+    "mtxr_wl_cm_reg_client_count": "1.3.6.1.4.1.14988.1.1.1.7.1.2",
+    "mtxr_poe_status": "1.3.6.1.4.1.14988.1.1.15.1.1.3",
+    "mtxr_poe_power": "1.3.6.1.4.1.14988.1.1.15.1.1.6",
 }

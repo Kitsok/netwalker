@@ -18,6 +18,8 @@ class InterfaceSnapshot:
     out_octets: int | None = None
     rx_bps: float | None = None
     tx_bps: float | None = None
+    poe_status: str | None = None
+    poe_power_watts: float | None = None
 
 
 @dataclass(slots=True)
@@ -101,6 +103,8 @@ class TopologySnapshot:
                             "speed_mbps": iface.speed_mbps,
                             "rx_bps": iface.rx_bps,
                             "tx_bps": iface.tx_bps,
+                            "poe_status": iface.poe_status,
+                            "poe_power_watts": iface.poe_power_watts,
                         }
                         for iface in sorted(
                             device.interfaces.values(), key=lambda item: item.name

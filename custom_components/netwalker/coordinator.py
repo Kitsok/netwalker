@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_COMMUNITY, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    CONF_COMMUNITY,
     CONF_MANUAL_LINKS,
+    CONF_PORT,
     CONF_RETRIES,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_TARGETS,

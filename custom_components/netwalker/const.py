@@ -5,6 +5,8 @@ from __future__ import annotations
 DOMAIN = "netwalker"
 PLATFORMS = ["sensor", "binary_sensor"]
 
+CONF_COMMUNITY = "community"
+CONF_PORT = "port"
 CONF_SCAN_TARGETS = "scan_targets"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_TIMEOUT = "timeout"

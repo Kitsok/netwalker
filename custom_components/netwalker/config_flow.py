@@ -6,11 +6,12 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_COMMUNITY, CONF_PORT
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_COMMUNITY,
     CONF_MANUAL_LINKS,
+    CONF_PORT,
     CONF_RETRIES,
     CONF_SCAN_INTERVAL,
     CONF_SCAN_TARGETS,
@@ -34,7 +35,7 @@ def _base_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_SCAN_TARGETS, default=defaults.get(CONF_SCAN_TARGETS, "")
             ): selector.TextSelector(
-                selector.TextSelectorConfig(multiline=True, type="text")
+                selector.TextSelectorConfig(multiline=True)
             ),
             vol.Required(
                 CONF_COMMUNITY, default=defaults.get(CONF_COMMUNITY, "public")
@@ -78,7 +79,7 @@ def _options_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(
             CONF_MANUAL_LINKS, default=defaults.get(CONF_MANUAL_LINKS, "")
         )
-    ] = selector.TextSelector(selector.TextSelectorConfig(multiline=True, type="text"))
+    ] = selector.TextSelector(selector.TextSelectorConfig(multiline=True))
     return vol.Schema(base)
 
 

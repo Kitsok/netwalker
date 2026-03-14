@@ -19,14 +19,19 @@ def build_topology(
     interval_seconds = _elapsed_seconds(previous, now)
     device_map = {device.device_id: device for device in devices}
     name_map = {device.display_name.lower(): device for device in devices}
+    host_map = {device.host.lower(): device for device in devices}
     previous_devices = previous.devices if previous else {}
     links_by_key: dict[tuple[str, str, str, str], LinkSnapshot] = {}
 
     for device in device_map.values():
         _populate_rates(device, previous_devices.get(device.device_id), interval_seconds)
         for neighbor in device.lldp_neighbors:
-            remote = name_map.get(neighbor.remote_system_name.lower())
+            remote = _resolve_remote_device(neighbor, host_map, name_map)
             if remote is None:
+                continue
+            if remote.device_id == device.device_id:
+                continue
+            if not _is_reciprocal_neighbor(device, neighbor, remote):
                 continue
             key = _link_key(
                 device.device_id,
@@ -132,6 +137,35 @@ def _find_interface(device: DeviceSnapshot, name: str | None):
         if interface.name == name:
             return interface
     return None
+
+
+def _resolve_remote_device(neighbor, host_map, name_map):
+    if neighbor.remote_management_address:
+        remote = host_map.get(neighbor.remote_management_address.lower())
+        if remote is not None:
+            return remote
+    return name_map.get(neighbor.remote_system_name.lower())
+
+
+def _is_reciprocal_neighbor(source, neighbor, remote) -> bool:
+    for remote_neighbor in remote.lldp_neighbors:
+        if not _neighbor_points_to_device(remote_neighbor, source):
+            continue
+        if neighbor.remote_interface and remote_neighbor.local_interface:
+            if remote_neighbor.local_interface != neighbor.remote_interface:
+                continue
+        if neighbor.local_interface and remote_neighbor.remote_interface:
+            if remote_neighbor.remote_interface != neighbor.local_interface:
+                continue
+        return True
+    return False
+
+
+def _neighbor_points_to_device(neighbor, device) -> bool:
+    if neighbor.remote_management_address:
+        if neighbor.remote_management_address.lower() == device.host.lower():
+            return True
+    return neighbor.remote_system_name.lower() == device.display_name.lower()
 
 
 def _derive_link_state(source_iface, target_iface) -> str:

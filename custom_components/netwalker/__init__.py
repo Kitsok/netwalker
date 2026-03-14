@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the integration domain."""
     async def _async_handle_refresh_service(call: ServiceCall) -> None:
-        """Refresh one or all configured topology coordinators."""
+        """Poll one or all configured topology coordinators."""
         entry_id = call.data.get("entry_id")
         runtimes = hass.data.get(DOMAIN, {})
         if entry_id:
@@ -35,6 +35,21 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         for runtime in runtimes.values():
             await runtime.coordinator.async_request_refresh()
 
+    async def _async_handle_discover_service(call: ServiceCall) -> None:
+        """Run discovery for one or all configured topology coordinators."""
+        entry_id = call.data.get("entry_id")
+        runtimes = hass.data.get(DOMAIN, {})
+        if entry_id:
+            runtime = runtimes.get(entry_id)
+            if runtime is None:
+                _LOGGER.warning("Discovery requested for unknown entry_id %s", entry_id)
+                return
+            await runtime.coordinator.async_discover()
+            return
+
+        for runtime in runtimes.values():
+            await runtime.coordinator.async_discover()
+
     hass.data.setdefault(DOMAIN, {})
     hass.http.register_view(NetWalkerTopologyView(hass))
     hass.http.register_view(NetWalkerEntriesView(hass))
@@ -46,12 +61,20 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         _async_handle_refresh_service,
         schema=vol.Schema({vol.Optional("entry_id"): cv.string}),
     )
+    service.async_register_admin_service(
+        hass,
+        DOMAIN,
+        "discover",
+        _async_handle_discover_service,
+        schema=vol.Schema({vol.Optional("entry_id"): cv.string}),
+    )
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up NetWalker from a config entry."""
     coordinator = NetWalkerCoordinator(hass, entry)
+    await coordinator.async_initialize()
     coordinator.async_set_updated_data(TopologySnapshot())
     hass.data[DOMAIN][entry.entry_id] = NetWalkerRuntime(coordinator=coordinator)
 

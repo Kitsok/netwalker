@@ -4,7 +4,7 @@ NetWalker is a Home Assistant custom integration for discovering MikroTik device
 
 Repository URL: `https://github.com/Kitsok/netwalker`
 
-Current version: `0.5.3`
+Current version: `0.6.0`
 
 ## Table of contents
 
@@ -22,14 +22,15 @@ This repository is intentionally structured as a HACS custom integration, not a 
 
 - UI-only configuration with Home Assistant config flow and options flow
 - SNMPv2c polling
-- Discovery targets entered in the web UI
-- Host, CIDR, and IPv4 range expansion from those discovery targets
-- LLDP management-address expansion from discovered devices
+- Discovery targets entered in the web UI for explicit discovery runs
+- Host, CIDR, and IPv4 range expansion during manual discovery
+- Polling of known nodes on the normal interval without rescanning the network
+- LLDP management-address expansion from discovered devices during manual discovery
 - Device discovery using standard SNMP system and interface tables
 - Link inference from LLDP plus optional manual UI overrides
 - Home Assistant entities and devices
 - Built-in Home Assistant panel for the interactive topology map
-- Admin service `netwalker.refresh` for immediate refresh from HA UI automations or developer tools
+- Admin services `netwalker.refresh` for immediate polling and `netwalker.discover` for explicit discovery
 
 ## UI-only configuration
 
@@ -38,7 +39,8 @@ No YAML is required. All configuration is stored in Home Assistant config entrie
 - title
 - discovery targets
 - support for single hosts, CIDR subnets, and IPv4 ranges
-- automatic expansion to LLDP neighbors that expose management IPs
+- manual discovery from those targets
+- automatic expansion to LLDP neighbors that expose management IPs during discovery
 - SNMP community
 - polling interval
 - retries and timeouts
@@ -71,9 +73,9 @@ The first version keeps manual overrides in the web UI as JSON text. That satisf
 11. Submit the form.
 
 After setup, Home Assistant will create discovered devices and entities, and the `NetWalker` sidebar panel will appear automatically.
-Configured discovery targets act as entry points. NetWalker will also try to
-discover additional MikroTik devices by following LLDP management
-addresses learned from those devices.
+Configured discovery targets are used only when you run manual discovery.
+Normal scheduled polling refreshes already known nodes and rebuilds the
+topology without rescanning the full target list.
 
 ### Option 2: Manual install
 
@@ -94,7 +96,8 @@ addresses learned from those devices.
 
 - Open the `NetWalker` item in the Home Assistant sidebar.
 - Select the NetWalker instance if you have more than one.
-- Use `Refresh` to trigger immediate polling.
+- Use `Poll` to trigger immediate polling of known nodes.
+- Use `Discover` to scan configured discovery targets and add new nodes.
 - Click a node to inspect interfaces and current traffic values.
 - Use the zoom and pan buttons to navigate the map.
 

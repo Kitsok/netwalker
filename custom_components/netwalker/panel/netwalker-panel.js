@@ -379,7 +379,8 @@ class NetWalkerPanel extends HTMLElement {
             }
           </select>
           <div class="button-row">
-            <button class="button" id="refresh-button">Refresh</button>
+            <button class="button" id="poll-button">Poll</button>
+            <button class="button" id="discover-button">Discover</button>
             <button class="button" id="zoom-in">Zoom +</button>
             <button class="button" id="zoom-out">Zoom -</button>
             <button class="button" id="pan-left">Left</button>
@@ -434,11 +435,23 @@ class NetWalkerPanel extends HTMLElement {
       };
     }
 
-    const refreshButton = this.shadowRoot.getElementById("refresh-button");
-    if (refreshButton) {
-      refreshButton.onclick = async () => {
+    const pollButton = this.shadowRoot.getElementById("poll-button");
+    if (pollButton) {
+      pollButton.onclick = async () => {
         if (this._hass && this._selectedEntryId) {
           await this._hass.callService("netwalker", "refresh", {
+            entry_id: this._selectedEntryId,
+          });
+        }
+        await this._loadTopology();
+      };
+    }
+
+    const discoverButton = this.shadowRoot.getElementById("discover-button");
+    if (discoverButton) {
+      discoverButton.onclick = async () => {
+        if (this._hass && this._selectedEntryId) {
+          await this._hass.callService("netwalker", "discover", {
             entry_id: this._selectedEntryId,
           });
         }
@@ -765,7 +778,7 @@ class NetWalkerPanel extends HTMLElement {
     if (!value) {
       return data?.devices?.length
         ? "Topology loaded"
-        : "Discovery in progress";
+        : "No discovered nodes yet";
     }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {

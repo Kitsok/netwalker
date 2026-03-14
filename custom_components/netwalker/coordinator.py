@@ -11,6 +11,7 @@ import re
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -56,12 +57,28 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
         self.hass = hass
         self.config_entry = entry
         self._previous: TopologySnapshot | None = None
+        self._known_hosts: list[str] = []
+        self._store: Store[dict[str, list[str]]] = Store(
+            hass, 1, f"{DOMAIN}.{entry.entry_id}"
+        )
+        self._discovery_lock = asyncio.Lock()
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{entry.entry_id}",
             update_interval=timedelta(seconds=self._scan_interval),
         )
+
+    async def async_initialize(self) -> None:
+        """Load persisted discovery state."""
+        stored = await self._store.async_load()
+        if not isinstance(stored, dict):
+            return
+        hosts = stored.get("known_hosts", [])
+        if isinstance(hosts, list):
+            self._known_hosts = _deduplicate_hosts(
+                [str(host) for host in hosts if str(host).strip()]
+            )
 
     @property
     def runtime(self) -> NetWalkerRuntime:
@@ -124,14 +141,82 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
         )
 
     async def _async_update_data(self) -> TopologySnapshot:
-        if not self.scan_targets and self._previous is None:
-            raise UpdateFailed("No scan targets configured")
+        poll_hosts = self._poll_hosts()
+        if not poll_hosts:
+            empty = self._previous or TopologySnapshot()
+            self._previous = empty
+            return empty
 
-        previous_by_host = {}
+        devices = await self._poll_host_batch(poll_hosts)
+        if not devices:
+            if self._previous is not None:
+                return self._previous
+            raise UpdateFailed("Polling failed for all known targets")
+
+        self._remember_known_hosts(devices)
+        snapshot = build_topology(devices, self._previous, self._manual_links)
+        self._previous = snapshot
+        return snapshot
+
+    async def async_discover(self) -> TopologySnapshot:
+        """Run an explicit discovery pass from configured targets."""
+        async with self._discovery_lock:
+            targets = _configured_discovery_targets(self.scan_targets) + [
+                DiscoveryTarget(host=host, strict=True) for host in self._known_hosts
+            ]
+            targets = _deduplicate_targets(targets)
+            devices = await self._discover_targets(targets)
+            if not devices:
+                if self._previous is not None:
+                    return self._previous
+                raise UpdateFailed("Discovery failed for all configured targets")
+
+            self._remember_known_hosts(devices)
+            snapshot = build_topology(devices, self._previous, self._manual_links)
+            self._previous = snapshot
+            self.async_set_updated_data(snapshot)
+            return snapshot
+
+    def _poll_hosts(self) -> list[str]:
+        hosts = self._known_hosts + _configured_literal_hosts(self.scan_targets)
         if self._previous is not None:
-            previous_by_host = {
-                device.host: device for device in self._previous.devices.values()
-            }
+            hosts.extend(device.host for device in self._previous.devices.values())
+        return _deduplicate_hosts(hosts)
+
+    async def _poll_host_batch(self, hosts: list[str]) -> list[DeviceSnapshot]:
+        previous_by_host = self._previous_by_host()
+
+        async def _poll(host: str) -> DeviceSnapshot | None:
+            try:
+                return await discover_device(
+                    host=host,
+                    community=self._community,
+                    port=self._port,
+                    timeout=self._timeout,
+                    retries=self._retries,
+                )
+            except Exception as err:
+                _LOGGER.debug("Polling failed for %s: %s", host, err)
+                previous_device = previous_by_host.get(host)
+                return mark_unreachable(previous_device) if previous_device else None
+
+        devices: dict[str, DeviceSnapshot] = {}
+        queue = list(hosts)
+        while queue:
+            batch: list[str] = []
+            while queue and len(batch) < 8:
+                batch.append(queue.pop(0))
+            results = await asyncio.gather(*(_poll(host) for host in batch))
+            for discovered in results:
+                if discovered is not None:
+                    devices[discovered.host] = discovered
+
+        return list(devices.values())
+
+    async def _discover_targets(
+        self, initial_targets: list[DiscoveryTarget]
+    ) -> list[DeviceSnapshot]:
+        previous_by_host = self._previous_by_host()
 
         async def _discover(target: DiscoveryTarget) -> DeviceSnapshot | None:
             try:
@@ -150,9 +235,7 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
                 previous_device = previous_by_host.get(target.host)
                 return mark_unreachable(previous_device) if previous_device else None
 
-        queue = _configured_discovery_targets(self.scan_targets) + [
-            DiscoveryTarget(host=host, strict=True) for host in previous_by_host if host.strip()
-        ]
+        queue = list(initial_targets)
         attempted: set[str] = set()
         devices_by_host: dict[str, DeviceSnapshot] = {}
 
@@ -182,12 +265,23 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
                     queue.append(DiscoveryTarget(host=neighbor_host, strict=True))
 
         devices = list(devices_by_host.values())
-        if not devices:
-            raise UpdateFailed("Discovery failed for all configured targets")
+        return devices
 
-        snapshot = build_topology(devices, self._previous, self._manual_links)
-        self._previous = snapshot
-        return snapshot
+    def _previous_by_host(self) -> dict[str, DeviceSnapshot]:
+        if self._previous is None:
+            return {}
+        return {device.host: device for device in self._previous.devices.values()}
+
+    def _remember_known_hosts(self, devices: list[DeviceSnapshot]) -> None:
+        hosts = self._known_hosts + [device.host for device in devices if device.reachable]
+        hosts += _configured_literal_hosts(self.scan_targets)
+        deduplicated = _deduplicate_hosts(hosts)
+        if deduplicated == self._known_hosts:
+            return
+        self._known_hosts = deduplicated
+        self.hass.async_create_task(
+            self._store.async_save({"known_hosts": self._known_hosts})
+        )
 
 
 def _neighbor_management_hosts(device: DeviceSnapshot) -> list[str]:
@@ -212,6 +306,20 @@ def _configured_discovery_targets(raw_targets: list[str]) -> list[DiscoveryTarge
     for raw_target in raw_targets:
         expanded.extend(_expand_discovery_target(raw_target))
     return _deduplicate_targets(expanded)
+
+
+def _configured_literal_hosts(raw_targets: list[str]) -> list[str]:
+    hosts: list[str] = []
+    for raw_target in raw_targets:
+        target = raw_target.strip()
+        if not target:
+            continue
+        if _expand_cidr_target(target) is not None:
+            continue
+        if _expand_ip_range_target(target) is not None:
+            continue
+        hosts.append(target)
+    return _deduplicate_hosts(hosts)
 
 
 def _expand_discovery_target(raw_target: str) -> list[DiscoveryTarget]:
@@ -308,4 +416,16 @@ def _deduplicate_targets(targets: list[DiscoveryTarget]) -> list[DiscoveryTarget
             continue
         if target.strict and not deduplicated[previous_index].strict:
             deduplicated[previous_index] = target
+    return deduplicated
+
+
+def _deduplicate_hosts(hosts: list[str]) -> list[str]:
+    deduplicated: list[str] = []
+    seen: set[str] = set()
+    for host in hosts:
+        key = _host_key(host)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(host)
     return deduplicated

@@ -1,10 +1,20 @@
 refresh:
-  name: Refresh topology
-  description: Trigger immediate SNMP refresh for one NetWalker entry or all entries.
+  name: Poll known nodes
+  description: Trigger immediate SNMP polling for already known NetWalker nodes.
   fields:
     entry_id:
       name: Entry ID
-      description: Optional config entry ID to refresh. Leave empty to refresh all NetWalker entries.
+      description: Optional config entry ID to poll. Leave empty to poll all NetWalker entries.
+      example: 0123456789abcdef0123456789abcdef
+      selector:
+        text:
+discover:
+  name: Discover nodes
+  description: Run discovery from the configured discovery targets for one NetWalker entry or all entries.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID to discover. Leave empty to discover all NetWalker entries.
       example: 0123456789abcdef0123456789abcdef
       selector:
         text:

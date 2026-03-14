@@ -528,42 +528,25 @@ class NetWalkerPanel extends HTMLElement {
       return "";
     }
 
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const offsetX = (-dy / length) * 6;
-    const offsetY = (dx / length) * 6;
     const stateUp = link.state === "up";
-    const forwardColor = stateUp ? "#3fd0d9" : "#7c828d";
-    const reverseColor = stateUp ? "#e7aa55" : "#7c828d";
-    const markerForward = stateUp ? "url(#arrow-forward)" : "url(#arrow-down)";
-    const markerReverse = stateUp ? "url(#arrow-reverse)" : "url(#arrow-down)";
+    const strokeColor = stateUp ? "#3fd0d9" : "#7c828d";
+    const marker = stateUp ? "url(#arrow-forward)" : "url(#arrow-down)";
     const labelX = (source.x + target.x) / 2;
     const labelY = (source.y + target.y) / 2;
     return `
       <g class="link-group">
         <line
-          x1="${source.x + offsetX}"
-          y1="${source.y + offsetY}"
-          x2="${target.x + offsetX}"
-          y2="${target.y + offsetY}"
-          stroke="${forwardColor}"
+          x1="${source.x}"
+          y1="${source.y}"
+          x2="${target.x}"
+          y2="${target.y}"
+          stroke="${strokeColor}"
           stroke-width="3"
           stroke-linecap="round"
-          marker-end="${markerForward}"
+          marker-end="${marker}"
         ></line>
-        <line
-          x1="${target.x - offsetX}"
-          y1="${target.y - offsetY}"
-          x2="${source.x - offsetX}"
-          y2="${source.y - offsetY}"
-          stroke="${reverseColor}"
-          stroke-width="3"
-          stroke-linecap="round"
-          marker-end="${markerReverse}"
-        ></line>
-        <text x="${labelX}" y="${labelY - 10}" text-anchor="middle" class="link-label">${this._escape(link.source_interface)} -> ${this._escape(link.target_interface || "?")}</text>
-        <text x="${labelX}" y="${labelY + 8}" text-anchor="middle" class="traffic-label">${this._escape(this._formatBits(link.forward_bps))} / ${this._escape(this._formatBits(link.reverse_bps))}</text>
+        <text x="${labelX}" y="${labelY - 10}" text-anchor="middle" class="link-label">${this._escape(link.source_interface)} ↔ ${this._escape(link.target_interface || "?")}</text>
+        <text x="${labelX}" y="${labelY + 8}" text-anchor="middle" class="traffic-label">↓ ${this._escape(this._formatBits(link.forward_bps))}  ↑ ${this._escape(this._formatBits(link.reverse_bps))}</text>
       </g>
     `;
   }

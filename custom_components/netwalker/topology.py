@@ -31,27 +31,27 @@ def build_topology(
                 continue
             if remote.device_id == device.device_id:
                 continue
-            if not _is_reciprocal_neighbor(device, neighbor, remote):
+            reciprocal = _find_reciprocal_neighbor(device, neighbor, remote)
+            if reciprocal is None:
                 continue
+            if device.device_id > remote.device_id:
+                continue
+            target_interface = neighbor.remote_interface or reciprocal.local_interface
             key = _link_key(
                 device.device_id,
                 neighbor.local_interface,
                 remote.device_id,
-                neighbor.remote_interface or "",
+                target_interface or "",
             )
             source_iface = _find_interface(device, neighbor.local_interface)
-            target_iface = (
-                _find_interface(remote, neighbor.remote_interface)
-                if neighbor.remote_interface
-                else None
-            )
+            target_iface = _find_interface(remote, target_interface)
             links_by_key[key] = LinkSnapshot(
                 source_device_id=device.device_id,
                 source_device_name=device.display_name,
                 source_interface=neighbor.local_interface,
                 target_device_id=remote.device_id,
                 target_device_name=remote.display_name,
-                target_interface=neighbor.remote_interface,
+                target_interface=target_interface,
                 state=_derive_link_state(source_iface, target_iface),
                 forward_bps=source_iface.tx_bps if source_iface else None,
                 reverse_bps=target_iface.tx_bps if target_iface else None,
@@ -147,7 +147,7 @@ def _resolve_remote_device(neighbor, host_map, name_map):
     return name_map.get(neighbor.remote_system_name.lower())
 
 
-def _is_reciprocal_neighbor(source, neighbor, remote) -> bool:
+def _find_reciprocal_neighbor(source, neighbor, remote):
     for remote_neighbor in remote.lldp_neighbors:
         if not _neighbor_points_to_device(remote_neighbor, source):
             continue
@@ -157,8 +157,8 @@ def _is_reciprocal_neighbor(source, neighbor, remote) -> bool:
         if neighbor.local_interface and remote_neighbor.remote_interface:
             if remote_neighbor.remote_interface != neighbor.local_interface:
                 continue
-        return True
-    return False
+        return remote_neighbor
+    return None
 
 
 def _neighbor_points_to_device(neighbor, device) -> bool:

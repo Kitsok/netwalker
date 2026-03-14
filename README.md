@@ -4,7 +4,7 @@ NetWalker is a Home Assistant custom integration for discovering MikroTik device
 
 Repository URL: `https://github.com/Kitsok/netwalker`
 
-Current version: `0.6.0`
+Current version: `0.6.1`
 
 ## Table of contents
 

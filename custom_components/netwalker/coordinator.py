@@ -8,9 +8,11 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 import re
+from urllib.parse import urlparse
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -72,13 +74,19 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
     async def async_initialize(self) -> None:
         """Load persisted discovery state."""
         stored = await self._store.async_load()
-        if not isinstance(stored, dict):
+        if isinstance(stored, dict):
+            hosts = stored.get("known_hosts", [])
+            if isinstance(hosts, list):
+                self._known_hosts = _deduplicate_hosts(
+                    [str(host) for host in hosts if str(host).strip()]
+                )
+
+        if self._known_hosts:
             return
-        hosts = stored.get("known_hosts", [])
-        if isinstance(hosts, list):
-            self._known_hosts = _deduplicate_hosts(
-                [str(host) for host in hosts if str(host).strip()]
-            )
+
+        self._known_hosts = self._seed_known_hosts_from_device_registry()
+        if self._known_hosts:
+            await self._store.async_save({"known_hosts": self._known_hosts})
 
     @property
     def runtime(self) -> NetWalkerRuntime:
@@ -282,6 +290,17 @@ class NetWalkerCoordinator(DataUpdateCoordinator[TopologySnapshot]):
         self.hass.async_create_task(
             self._store.async_save({"known_hosts": self._known_hosts})
         )
+
+    def _seed_known_hosts_from_device_registry(self) -> list[str]:
+        registry = dr.async_get(self.hass)
+        hosts: list[str] = []
+        for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
+            if not device.configuration_url:
+                continue
+            parsed = urlparse(device.configuration_url)
+            if parsed.hostname:
+                hosts.append(parsed.hostname)
+        return _deduplicate_hosts(hosts)
 
 
 def _neighbor_management_hosts(device: DeviceSnapshot) -> list[str]:

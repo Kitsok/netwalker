@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
@@ -148,12 +149,29 @@ def _resolve_remote_device(neighbor, host_map, name_map):
 
 
 def _find_reciprocal_neighbor(source, neighbor, remote):
+    candidates = []
     for remote_neighbor in remote.lldp_neighbors:
         if not _neighbor_points_to_device(remote_neighbor, source):
             continue
-        if not _interfaces_confirm_link(neighbor, remote_neighbor):
-            continue
-        return remote_neighbor
+        score = _interface_match_score(neighbor, remote_neighbor)
+        candidates.append((score, remote_neighbor))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    best_score, best_neighbor = candidates[0]
+    if best_score > 0:
+        return best_neighbor
+
+    source_candidates = [
+        source_neighbor
+        for source_neighbor in source.lldp_neighbors
+        if _resolve_neighbor_key(source_neighbor) == _resolve_neighbor_key(neighbor)
+    ]
+    if len(source_candidates) == 1 and len(candidates) == 1:
+        return best_neighbor
+
     return None
 
 
@@ -164,17 +182,40 @@ def _neighbor_points_to_device(neighbor, device) -> bool:
     return neighbor.remote_system_name.lower() == device.display_name.lower()
 
 
-def _interfaces_confirm_link(left_neighbor, right_neighbor) -> bool:
-    left_confirms = False
-    right_confirms = False
+def _interface_match_score(left_neighbor, right_neighbor) -> int:
+    score = 0
 
-    if left_neighbor.remote_interface and right_neighbor.local_interface:
-        left_confirms = right_neighbor.local_interface == left_neighbor.remote_interface
+    left_remote = _normalize_interface_name(left_neighbor.remote_interface)
+    left_local = _normalize_interface_name(left_neighbor.local_interface)
+    right_remote = _normalize_interface_name(right_neighbor.remote_interface)
+    right_local = _normalize_interface_name(right_neighbor.local_interface)
 
-    if right_neighbor.remote_interface and left_neighbor.local_interface:
-        right_confirms = left_neighbor.local_interface == right_neighbor.remote_interface
+    if left_remote and right_local:
+        if left_remote == right_local:
+            score += 2
+        elif left_remote in right_local or right_local in left_remote:
+            score += 1
 
-    return left_confirms or right_confirms
+    if right_remote and left_local:
+        if right_remote == left_local:
+            score += 2
+        elif right_remote in left_local or left_local in right_remote:
+            score += 1
+
+    return score
+
+
+def _normalize_interface_name(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _resolve_neighbor_key(neighbor) -> tuple[str, str]:
+    return (
+        (neighbor.remote_management_address or "").lower(),
+        neighbor.remote_system_name.lower(),
+    )
 
 
 def _derive_link_state(source_iface, target_iface) -> str:

@@ -151,12 +151,8 @@ def _find_reciprocal_neighbor(source, neighbor, remote):
     for remote_neighbor in remote.lldp_neighbors:
         if not _neighbor_points_to_device(remote_neighbor, source):
             continue
-        if neighbor.remote_interface and remote_neighbor.local_interface:
-            if remote_neighbor.local_interface != neighbor.remote_interface:
-                continue
-        if neighbor.local_interface and remote_neighbor.remote_interface:
-            if remote_neighbor.remote_interface != neighbor.local_interface:
-                continue
+        if not _interfaces_confirm_link(neighbor, remote_neighbor):
+            continue
         return remote_neighbor
     return None
 
@@ -166,6 +162,19 @@ def _neighbor_points_to_device(neighbor, device) -> bool:
         if neighbor.remote_management_address.lower() == device.host.lower():
             return True
     return neighbor.remote_system_name.lower() == device.display_name.lower()
+
+
+def _interfaces_confirm_link(left_neighbor, right_neighbor) -> bool:
+    left_confirms = False
+    right_confirms = False
+
+    if left_neighbor.remote_interface and right_neighbor.local_interface:
+        left_confirms = right_neighbor.local_interface == left_neighbor.remote_interface
+
+    if right_neighbor.remote_interface and left_neighbor.local_interface:
+        right_confirms = left_neighbor.local_interface == right_neighbor.remote_interface
+
+    return left_confirms or right_confirms
 
 
 def _derive_link_state(source_iface, target_iface) -> str:
